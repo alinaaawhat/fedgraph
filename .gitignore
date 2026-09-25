@@ -1,0 +1,10 @@
+datasets/
+cache_data/
+generated_files/
+logs/
+wandb/
+multirun/
+lightning_logs/
+__pycache__/
+*.py[cod]
+.DS_Store

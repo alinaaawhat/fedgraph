@@ -1,0 +1,133 @@
+# @package _global_
+defaults:
+  - _self_ 
+  - /data   
+  - /model   
+  - optional user: env 
+  - override /hydra/hydra_logging@_group_: none 
+  - override /hydra/job_logging@_group_: none 
+
+federated:
+  cuda: 0
+  algorithm: FedAvg
+  fedprox_mu: 0.01
+  rounds: ${pretrain.pretrain_epochs}
+  local_epochs: 10
+  encoder_layers: 2
+  aggregation_weighting: train_samples
+  inference_runs: 50
+  m_way_runs: 30
+  cross_domain_runs: 30
+  inference_batch_size: 65536
+  eval_classifier_epochs: 100
+  eval_classifier_lr: 1e-2
+  eval_classifier_weight_decay: 0.0
+  scaffold:
+    server_lr: 1.0
+  fedsr:
+    l2r_coeff: 1e-2
+    cmi_coeff: 5e-4
+    num_samples: 20
+    momentum: 0.9
+    sigma_epsilon: 1e-6
+  fgood:
+    selected_clients: null
+    propagation_depth: 2
+    lambda_scatter: 0.1
+    lambda_l2: 1e-5
+  fediir:
+    penalty: 1e-3
+    ema: 0.95
+    momentum: 0.9
+  fedadg:
+    alpha: 0.85
+    label_smoothing: 0.1
+    label_condition_value: 0.7
+    warmup_epochs: 3
+    adversarial_batch_size: 4096
+    noise_dim: 64
+    generator_hidden_dim: 256
+    projection_dim: 64
+    discriminator_hidden_dim: 128
+    adversarial_lr: 7e-4
+    momentum: 0.9
+  feddg:
+    step_size: 0.2
+    fair_metric: acc
+  fedlog:
+    num_prototypes: 20
+    condensation_steps: 20
+    condensation_lr: 0.01
+    synthetic_loss_weight: 1.0
+    feature_weight: 1.0
+    embedding_weight: 1.0
+    neighbor_weight: 1.0
+    noise_std: 0.01
+    reliability_floor: 0.05
+  
+project_root: ${hydra:runtime.cwd}
+dirs:
+  data_storage: ${project_root}/datasets/   
+  hydra: ${.temp}hydra/
+  output: ${project_root}/generated_files/output/${model.name}/${uid}/ 
+  fingerprint_storage: ${project_root}/generated_files/fingerprint/  
+
+
+  checkpoint_dir: ${project_root}/generated_files/checkpoints/${model.name}/${uid}/  
+
+  temp: ${project_root}/generated_files/temp/working_dir/${uid}/
+
+
+res_file: ${dirs.output}seed${seed}_results.json
+uid: null 
+seed: 0
+remove_dir: false
+
+pretrain:
+  seed: 42
+  gpu: 1
+  pretrain_datasets: ['pubmed', 'arxiv', 'wikics', 'amazon-ratings']
+  train_tasks: ['pubmed_link','pubmed_node','arxiv','wikics', 'amazon-ratings']
+  eval_tasks: ['cora_node']
+  use_original_mask: true
+  pretrain_epochs: 100
+
+  k_shot: 5
+  m_way: 10
+  t_query: 1
+  n_eqisodes: 100
+
+  min_delta: 0.001
+  patience: 10000
+  log_every_n_steps: 1
+  check_val_every_n_epoch: 5
+  
+wandb:
+  project: "GAlign-Pretrain-Ali"
+  debug: false
+
+logging:
+  level: info
+  enable_stdout_log: true
+  log_wandb_metric_to_stdout: False
+  prefix: ''
+
+
+hydra:
+  run:
+    dir: ${dirs.hydra}
+
+
+
+link_cls:
+  model_path: 'generated_files/output/G-Align/Aug13-0:14-97cc0c8c/final_gfm_model.pt'
+  dataset: none
+  aggr_method: 'concat'
+  use_relation_emb: true
+  k_shot: none
+  m_way: none
+  n_episodes: 20
+  gpu_id: 1
+  llm_name: 'roberta'
+  seed: 42
+  max_edges_per_node: 100

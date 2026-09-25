@@ -1,0 +1,68 @@
+model:
+  name: G-Align
+
+prev_ckpt: null
+
+unify_dim: 64
+
+Fingerprint:
+  hidden_dim: 64
+  n_layers: 1
+  conv_type: 'SAGE'
+  add_self_loops: true
+  n_layers_fingerprint: 1
+  n_heads: 8
+  use_bn: false
+  probe_lr: 1e-2
+  fp_proj_dim: 64
+  dropout: 0.5
+  readout_proj: true
+  task: 'node_cls' 
+  device: null
+  require_grad_only: true
+  compressed_dim: 64
+  pca_whiten: true
+  pca_svd_full: false 
+  l2_normalize: true
+  random_state: 42
+  loss_type: 'ce'
+  DE_type: 'conv'
+  contrast_loss:
+    probe_mask_ratio: 0.3
+    probe_recon_weight: 1.0
+    probe_neigh_weight: 1.0
+    detach_embed: true
+  DE:
+    hidden_channels: 32
+    num_conv_layers: 2
+    kernel_size: 3
+    padding: 1
+    use_maxpool: true
+    pool_size: 2
+    pool_stride: 2
+    adaptive_pool_size: 4
+    mlp_hidden_dims: [256, 128]
+    mlp_dropout: 0.0
+    train_epochs: 300
+    train_lr: 1e-3
+    diversity_weight: 0.1
+    padding_strategy: 'zero'
+    padding_noise_std: 0.01
+
+Cali:
+  hidden_dim: 64
+  num_layers: 2
+  aligned_feat_dim: 64
+  dropout: 0.5
+  layernorm: false
+  softplus: true
+
+PAMA:
+  d_attn: 64
+  heads: 1
+  dropout: 0.5
+
+
+PTModel:
+  lr: 5e-3
+  weight_decay: 0.0005
