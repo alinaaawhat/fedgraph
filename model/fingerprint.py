@@ -462,45 +462,42 @@ class DomainEmbeddingExtractor:
         num_epochs = de_cfg.train_epochs
         lr = de_cfg.train_lr
         diversity_weight = de_cfg.diversity_weight
-
         optimizer = torch.optim.Adam(self.projection.parameters(), lr=lr)
-
         deltas = [d.to(self.device) for d in delta_matrices]
-        M = len(deltas)
+        normalized_responses = torch.stack([
+            F.normalize(delta.reshape(-1), p=2, dim=0).reshape_as(delta)
+            for delta in deltas
+        ])
+        response_rows = normalized_responses.flatten(start_dim=1)
+        target_distances = torch.cdist(response_rows, response_rows, p=2)
+        count = len(deltas)
+        pair_mask = torch.triu(
+            torch.ones(count, count, dtype=torch.bool, device=self.device),
+            diagonal=1,
+        )
 
-        orig_dists = torch.zeros(M,M, device=self.device)
-
-        for i in range(M):
-            for j in range(i + 1, M):
-                orig_dists[i,j] = torch.norm(deltas[i] - deltas[j], p="fro")
-                orig_dists[j,i] = orig_dists[i,j]
-        
         for epoch in range(num_epochs):
-            
             with torch.enable_grad():
-                optimizer.zero_grad()
-                embeddings = []
-                for delta in deltas:
-                    e = self.projection(delta)
-                    if self.cfg.Fingerprint.l2_normalize:
-                        e = F.normalize(e, p=2, dim=-1)
-                    embeddings.append(e)
-                
-                proj_dists = torch.zeros(M, M, device=self.device)
-                for i in range(M):
-                    for j in range(i + 1, M):
-                        proj_dists[i,j] = torch.norm(embeddings[i] - embeddings[j], p=2)
-                        proj_dists[j,i] = proj_dists[i,j]
-                
-                distance_loss = F.mse_loss(proj_dists, orig_dists)
-                diversity_loss = torch.zeros((), device=self.device)
-
-                if M < self.d_e:
-                    E = torch.stack(embeddings, dim=0)
-                    gram = E @ E.T
-                    diversity_loss = -torch.logdet(
-                        gram + 1e-6 * torch.eye(M, device=self.device)
+                optimizer.zero_grad(set_to_none=True)
+                embeddings = torch.stack([
+                    F.normalize(self.projection(delta), p=2, dim=-1)
+                    for delta in deltas
+                ])
+                projected_distances = torch.cdist(embeddings, embeddings, p=2)
+                if pair_mask.any():
+                    distance_loss = F.mse_loss(
+                        projected_distances[pair_mask],
+                        target_distances[pair_mask],
                     )
+                else:
+                    distance_loss = embeddings.sum() * 0.0
+                gram = embeddings @ embeddings.T
+                diversity_loss = -torch.linalg.slogdet(
+                    gram
+                    + 1e-6 * torch.eye(
+                        count, device=self.device, dtype=gram.dtype
+                    )
+                ).logabsdet
                 loss = distance_loss + diversity_weight * diversity_loss
                 loss.backward()
                 optimizer.step()
@@ -512,8 +509,6 @@ class DomainEmbeddingExtractor:
                     f"distance_mse={distance_loss.item():.6f} | "
                     f"diversity={diversity_loss.item():.6f}"
                 )
-        
-        
         self.projection.eval()
 
 
@@ -642,6 +637,5 @@ class DomainEmbedder(nn.Module):
     @torch.no_grad()
     def fingerprint_unseen(self, data_new: Data):
         return self.dm_extractor.fingerprint_unseen_pca(data_new) if self.cfg.Fingerprint.DE_type == 'pca' else self.dm_extractor.fingerprint_unseen_conv(data_new)
-
 
 
