@@ -1,4 +1,4 @@
-# Federated graph Learning on Unseen Domain
+# Federated graph Learning on DG
 ```bash
 pip install -r requirements.txt
 ```
