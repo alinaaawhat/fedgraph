@@ -29,7 +29,7 @@ class BatchedSQV(nn.Module):
 
     def __init__(self, cfg):
         super().__init__()
-        self.hidden_dim = int(cfg.Fingerprint.hidden_dim)
+        self.hidden_dim = int(cfg.EditGrad.hidden_dim)
         self.heads = int(OmegaConf.select(cfg, "PAMA.heads", default=1))
         self.head_dim = int(
             OmegaConf.select(cfg, "PAMA.d_attn", default=self.hidden_dim)
@@ -111,7 +111,7 @@ class V4FederatedGFM(v3.V3FederatedGFM):
         )
         if self.use_fixed_domain_state:
             self.shared_domain_state = nn.Parameter(torch.zeros(
-                1, int(self.cfg.Fingerprint.compressed_dim)
+                1, int(self.cfg.EditGrad.compressed_dim)
             ))
         else:
             self.register_parameter("shared_domain_state", None)
@@ -245,10 +245,10 @@ def _augment_checkpoint(path):
 def main(cfg: DictConfig):
     OmegaConf.update(cfg, "ablation.variant", "E", force_add=True)
     v3._configure_variant(cfg)
-    cfg.Fingerprint.DE_type = "conv"
-    original._compute_shared_fingerprint = v3.compute_shared_fingerprint_v3
-    v3.install_shared_fingerprint_v3.original_install = original._install_shared_fingerprint
-    original._install_shared_fingerprint = v3.install_shared_fingerprint_v3
+    cfg.EditGrad.DE_type = "conv"
+    original._compute_shared_editgrad = v3.compute_shared_editgrad_v3
+    v3.install_shared_editgrad_v3.original_install = original._install_shared_editgrad
+    original._install_shared_editgrad = v3.install_shared_editgrad_v3
     original.FederatedGFM = V4FederatedGFM
     original._run_local_training = v3.run_local_training_v3
 
@@ -299,9 +299,9 @@ if __name__ == "__main__":
         "+ablation.centered_cali=true": "ablation.centered_cali=",
         "+ablation.multi_episode=true": "ablation.multi_episode=",
         "+ablation.sample_domain_responses=true": "ablation.sample_domain_responses=",
-        "+ablation.fingerprint_bank_size=32": "ablation.fingerprint_bank_size=",
-        "+ablation.fingerprint_k_shot=5": "ablation.fingerprint_k_shot=",
-        "+ablation.fingerprint_m_way=5": "ablation.fingerprint_m_way=",
+        "+ablation.editgrad_bank_size=32": "ablation.editgrad_bank_size=",
+        "+ablation.editgrad_k_shot=5": "ablation.editgrad_k_shot=",
+        "+ablation.editgrad_m_way=5": "ablation.editgrad_m_way=",
         "+ablation.diversity_weight=0.001": "ablation.diversity_weight=",
         "+ablation.stability_weight=0.01": "ablation.stability_weight=",
         "+ablation.projection_patience=40": "ablation.projection_patience=",
@@ -315,8 +315,8 @@ if __name__ == "__main__":
         "federated.local_epochs=3": "federated.local_epochs=",
         "federated.rounds=700": "federated.rounds=",
         "pretrain.t_query=5": "pretrain.t_query=",
-        "Fingerprint.n_layers=2": "Fingerprint.n_layers=",
-        "Fingerprint.n_layers_fingerprint=1": "Fingerprint.n_layers_fingerprint=",
+        "EditGrad.n_layers=2": "EditGrad.n_layers=",
+        "EditGrad.n_layers_editgrad=1": "EditGrad.n_layers_editgrad=",
     }
     for default, key in defaults.items():
         if not any(key in argument for argument in sys.argv[1:]):

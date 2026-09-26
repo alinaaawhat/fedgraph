@@ -36,7 +36,7 @@ from data_process.datahelper import (
 )
 from data_process.task_constructor import UnifiedTaskConstructor, train_task_constructor
 from model.base import BackboneGNN, BackboneGNN2, FlexibleBackboneGNN
-from model.fingerprint import DomainEmbedder
+from model.editgrad import DomainEmbedder
 from model.pt_model import GFM, PAMA
 from utils.exp import init_exp
 from utils.logging import logger, timer
@@ -89,26 +89,26 @@ def create_backbone_and_frozen_copy(
     device: torch.device,
 ):
     pass
-    n_fingerprint_layers = int(cfg.Fingerprint.get("n_layers_fingerprint", 1))
-    if cfg.Fingerprint.get("use_flexible_backbone", True):
+    n_editgrad_layers = int(cfg.EditGrad.get("n_layers_editgrad", 1))
+    if cfg.EditGrad.get("use_flexible_backbone", True):
         backbone = FlexibleBackboneGNN(
             in_dim=input_dim,
             num_classes=num_classes,
             cfg=cfg,
-            fingerprint_layers=n_fingerprint_layers,
+            editgrad_layers=n_editgrad_layers,
         ).to(device)
-        frozen_backbone = backbone.create_fingerprint_copy().to(device)
+        frozen_backbone = backbone.create_editgrad_copy().to(device)
     else:
         backbone = BackboneGNN2(
             in_dim=input_dim, num_classes=num_classes, cfg=cfg
         ).to(device)
         frozen_cfg = copy.deepcopy(cfg)
-        frozen_cfg.Fingerprint.n_layers = n_fingerprint_layers
+        frozen_cfg.EditGrad.n_layers = n_editgrad_layers
         frozen_backbone = BackboneGNN2(
             in_dim=input_dim, num_classes=num_classes, cfg=frozen_cfg
         ).to(device)
         frozen_backbone.load_state_dict(
-            backbone.get_submodel_state_dict(n_fingerprint_layers), strict=False
+            backbone.get_submodel_state_dict(n_editgrad_layers), strict=False
         )
     return backbone, frozen_backbone
 
@@ -699,27 +699,27 @@ def _client_cfg(cfg: DictConfig, client_name: str) -> DictConfig:
     run_name = osp.basename(str(cfg.dirs.output).rstrip(osp.sep))
     
     
-    local_cfg.dirs.fingerprint_storage = osp.join(
-        cfg.dirs.fingerprint_storage,
+    local_cfg.dirs.editgrad_storage = osp.join(
+        cfg.dirs.editgrad_storage,
         "federated_clients",
         run_name,
     )
     return local_cfg
 
 
-def _shared_fingerprint_cfg(cfg: DictConfig) -> DictConfig:
+def _shared_editgrad_cfg(cfg: DictConfig) -> DictConfig:
     pass
     shared_cfg = copy.deepcopy(cfg)
     run_name = osp.basename(str(cfg.dirs.output).rstrip(osp.sep))
-    shared_cfg.dirs.fingerprint_storage = osp.join(
-        cfg.dirs.fingerprint_storage,
+    shared_cfg.dirs.editgrad_storage = osp.join(
+        cfg.dirs.editgrad_storage,
         "federated_shared",
         run_name,
     )
     return shared_cfg
 
 
-def _compute_shared_fingerprint(
+def _compute_shared_editgrad(
     cfg: DictConfig,
     clients: Mapping[str, Data],
     frozen_backbone: torch.nn.Module,
@@ -730,7 +730,7 @@ def _compute_shared_fingerprint(
 
 
 
-    shared_cfg = _shared_fingerprint_cfg(cfg)
+    shared_cfg = _shared_editgrad_cfg(cfg)
     shared_embedder = DomainEmbedder(
         frozen_backboneGNN=copy.deepcopy(frozen_backbone).to(device),
         cfg=shared_cfg,
@@ -741,20 +741,20 @@ def _compute_shared_fingerprint(
         extractor._probe_grad4domain(graph, None, 0)
         for graph in clients.values()
     ]
-    if shared_cfg.Fingerprint.DE_type == "pca":
+    if shared_cfg.EditGrad.DE_type == "pca":
         stacked_deltas = torch.stack(deltas, dim=0).to(device)
         basis, embeddings = extractor._fit_pca(stacked_deltas)
         extractor._B = basis
         extractor._e = embeddings
         extractor._delta_matrices = None
-    elif shared_cfg.Fingerprint.DE_type == "conv":
+    elif shared_cfg.EditGrad.DE_type == "conv":
         feature_dim = int(deltas[0].shape[0])
         max_width = max(int(delta.shape[1]) for delta in deltas)
-        padding_strategy = shared_cfg.Fingerprint.DE.get(
+        padding_strategy = shared_cfg.EditGrad.DE.get(
             "padding_strategy", "zero"
         )
         padding_noise_std = float(
-            shared_cfg.Fingerprint.DE.get("padding_noise_std", 0.01)
+            shared_cfg.EditGrad.DE.get("padding_noise_std", 0.01)
         )
         padded_deltas = []
         for delta in deltas:
@@ -785,24 +785,24 @@ def _compute_shared_fingerprint(
         for delta in padded_deltas:
             with torch.no_grad():
                 embedding = extractor.projection(delta.to(device))
-                if shared_cfg.Fingerprint.l2_normalize:
+                if shared_cfg.EditGrad.l2_normalize:
                     embedding = F.normalize(embedding, p=2, dim=-1)
                 embeddings.append(embedding)
         extractor._e = torch.stack(embeddings, dim=0)
     else:
         raise ValueError(
-            f"Unsupported fingerprint type {shared_cfg.Fingerprint.DE_type!r}"
+            f"Unsupported editgrad type {shared_cfg.EditGrad.DE_type!r}"
         )
 
     extractor._save_cache()
     logger.info(
-        "Computed one shared fingerprint space from %d client domains",
+        "Computed one shared editgrad space from %d client domains",
         len(clients),
     )
     return shared_embedder
 
 
-def _install_shared_fingerprint(
+def _install_shared_editgrad(
     model: "FederatedGFM",
     shared_embedder: DomainEmbedder,
     client_index: int,
@@ -818,7 +818,7 @@ def _install_shared_fingerprint(
     target._e = source._e[client_index : client_index + 1].detach().clone()
     target._cached = True
 
-    if model.cfg.Fingerprint.DE_type == "pca":
+    if model.cfg.EditGrad.DE_type == "pca":
         target._B = source._B.detach().clone()
     else:
         target.projection.load_state_dict(source.projection.state_dict())
@@ -843,7 +843,7 @@ def _build_model(
     device: torch.device,
 ) -> FederatedGFM:
     input_dim = int(graph.x.size(-1))
-    if cfg.Fingerprint.n_layers == 1 and cfg.Fingerprint.readout_proj:
+    if cfg.EditGrad.n_layers == 1 and cfg.EditGrad.readout_proj:
         backbone = BackboneGNN(
             in_dim=input_dim, num_classes=num_classes, cfg=cfg
         ).to(device)
@@ -1041,7 +1041,7 @@ def main(cfg: DictConfig):
             local_model.load_state_dict(global_state, strict=True)
         client_models[client_name] = local_model
 
-    shared_embedder = _compute_shared_fingerprint(
+    shared_embedder = _compute_shared_editgrad(
         cfg=cfg,
         clients=clients,
         frozen_backbone=client_models[first_name].frozen_backbone,
@@ -1049,7 +1049,7 @@ def main(cfg: DictConfig):
     )
     for client_index, (client_name, client_graph) in enumerate(clients.items()):
         local_model = client_models[client_name]
-        _install_shared_fingerprint(
+        _install_shared_editgrad(
             model=local_model,
             shared_embedder=shared_embedder,
             client_index=client_index,
@@ -1184,7 +1184,7 @@ def main(cfg: DictConfig):
         "combined_graphs_info": graph_summary,
         "history": history,
     }
-    if cfg.Fingerprint.DE_type == "conv":
+    if cfg.EditGrad.DE_type == "conv":
         model_state["domain_embedder_projection_state"] = {
             name: tensor.detach().cpu().clone()
             for name, tensor in shared_extractor.projection.state_dict().items()

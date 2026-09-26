@@ -126,7 +126,7 @@ class ComponentAblator:
             raise RuntimeError("No probe gradient was produced")
         if gradient.shape[0] != graph.x.shape[1]:
             gradient = gradient.T
-        delta = -float(self.learner.cfg.Fingerprint.probe_lr) * gradient
+        delta = -float(self.learner.cfg.EditGrad.probe_lr) * gradient
         if zero_delta:
             delta.zero_()
 
@@ -138,7 +138,7 @@ class ComponentAblator:
 
         with torch.no_grad():
             embedding = extractor.projection(delta)
-            if bool(self.learner.cfg.Fingerprint.l2_normalize):
+            if bool(self.learner.cfg.EditGrad.l2_normalize):
                 embedding = F.normalize(embedding, p=2, dim=-1)
         return embedding.detach()
 

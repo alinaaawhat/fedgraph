@@ -88,8 +88,8 @@ class GraphProbContrastLoss(nn.Module):
 class ConvProjection(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        de_cfg = cfg.Fingerprint.DE
-        self.d_e = cfg.Fingerprint.compressed_dim
+        de_cfg = cfg.EditGrad.DE
+        self.d_e = cfg.EditGrad.compressed_dim
         hidden_channels = de_cfg.hidden_channels
         num_conv_layers = de_cfg.num_conv_layers
         kernel_size = de_cfg.kernel_size
@@ -144,22 +144,22 @@ class DomainEmbeddingExtractor:
         self.frozen_backbone = frozen_backbone
         self.cfg = cfg
         pretrain_ds_names = cfg.pretrain.pretrain_datasets  
-        if cfg.Fingerprint.task == 'node_cls':
-            if cfg.Fingerprint.loss_type == 'contrastive':
+        if cfg.EditGrad.task == 'node_cls':
+            if cfg.EditGrad.loss_type == 'contrastive':
                 self.prob_loss = GraphProbContrastLoss(
-                    mask_ratio=cfg.Fingerprint.contrast_loss.probe_mask_ratio,
-                    recon_weight=cfg.Fingerprint.contrast_loss.probe_recon_weight,
-                    neigh_weight=cfg.Fingerprint.contrast_loss.probe_neigh_weight,
-                    detach_embed=cfg.Fingerprint.detach_embed
+                    mask_ratio=cfg.EditGrad.contrast_loss.probe_mask_ratio,
+                    recon_weight=cfg.EditGrad.contrast_loss.probe_recon_weight,
+                    neigh_weight=cfg.EditGrad.contrast_loss.probe_neigh_weight,
+                    detach_embed=cfg.EditGrad.detach_embed
                 )
-            elif cfg.Fingerprint.loss_type == 'ce':
+            elif cfg.EditGrad.loss_type == 'ce':
                 self.prob_loss = nn.CrossEntropyLoss()
             else:
-                raise ValueError(f"Unknown loss type {cfg.Fingerprint.loss_type} for Fingerprint")
+                raise ValueError(f"Unknown loss type {cfg.EditGrad.loss_type} for EditGrad")
 
-        self.d_e = cfg.Fingerprint.compressed_dim
+        self.d_e = cfg.EditGrad.compressed_dim
         self.device = self._device() 
-        if self.cfg.Fingerprint.DE_type == 'conv':
+        if self.cfg.EditGrad.DE_type == 'conv':
             self.projection = ConvProjection(cfg).to(self.device)
 
         if isinstance(pretrain_ds_names, list):
@@ -167,8 +167,8 @@ class DomainEmbeddingExtractor:
         else:
             ds_names_str = '_'.join(ast.literal_eval(str(pretrain_ds_names)))
 
-        fingerprint_dir = os.path.join(cfg.dirs.fingerprint_storage, ds_names_str)
-        self.cache_dir = Path(fingerprint_dir)
+        editgrad_dir = os.path.join(cfg.dirs.editgrad_storage, ds_names_str)
+        self.cache_dir = Path(editgrad_dir)
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._cached = False
@@ -184,7 +184,7 @@ class DomainEmbeddingExtractor:
         if not self.cache_dir: 
             return
         cache_files = ['projection_state.pt', 'PreDomainEmbedding.pt', 'theta0.pt', 'delta_matrices.pt']
-        if self.cfg.Fingerprint.DE_type == 'conv':
+        if self.cfg.EditGrad.DE_type == 'conv':
             if all((self._pth(f).exists() for f in cache_files)):
                 
                 projection_state = torch.load(self._pth('projection_state.pt'), map_location='cpu', weights_only=False)
@@ -199,7 +199,7 @@ class DomainEmbeddingExtractor:
                 
                 self.frozen_backbone.load_state_dict(self._theta0, strict=False)
                 self._cached = True
-        elif self.cfg.Fingerprint.DE_type == 'pca':
+        elif self.cfg.EditGrad.DE_type == 'pca':
             if (self._pth('B.pt').exists() and 
                 self._pth('PreDomainEmbedding.pt').exists() and 
                 self._pth('theta0.pt').exists()):
@@ -209,31 +209,31 @@ class DomainEmbeddingExtractor:
                 self.frozen_backbone.load_state_dict(self._theta0, strict=False)
                 self._cached = True
         else:
-            raise ValueError(f"Unknown Domain Embedder Type {self.cfg.Fingerprint.DE_type} for Domain Embeddings")
+            raise ValueError(f"Unknown Domain Embedder Type {self.cfg.EditGrad.DE_type} for Domain Embeddings")
 
 
     def _device(self):
-        if self.cfg.Fingerprint.device is not None:
-            return torch.device(self.cfg.Fingerprint.device)
+        if self.cfg.EditGrad.device is not None:
+            return torch.device(self.cfg.EditGrad.device)
         try:
             return next(self.frozen_backbone.parameters()).device
         except StopIteration:
             return torch.device("cpu")
 
     def _maybe_cache_path(self, pretrain_mode:str ,name:str): 
-        if self.cfg.dirs.fingerprint_storage is None:
+        if self.cfg.dirs.editgrad_storage is None:
             return None
-        os.makedirs(self.cfg.dirs.fingerprint_storage, exist_ok=True)
-        return os.path.join(self.cfg.dirs.fingerprint_storage, pretrain_mode, name)
+        os.makedirs(self.cfg.dirs.editgrad_storage, exist_ok=True)
+        return os.path.join(self.cfg.dirs.editgrad_storage, pretrain_mode, name)
     
     def _save_cache(self):
         if not self.cache_dir: 
             return
-        if self.cfg.Fingerprint.DE_type == 'conv':
+        if self.cfg.EditGrad.DE_type == 'conv':
             torch.save(self.projection.state_dict(), self._pth('projection_state.pt'))
             torch.save(self._e.cpu(), self._pth('PreDomainEmbedding.pt'))
             torch.save(self._theta0, self._pth('theta0.pt'))
-        elif self.cfg.Fingerprint.DE_type == 'pca':
+        elif self.cfg.EditGrad.DE_type == 'pca':
             torch.save(self._B.cpu(), self._pth('B.pt'))
             torch.save(self._e.cpu(), self._pth('PreDomainEmbedding.pt'))
             torch.save(self._theta0, self._pth('theta0.pt'))
@@ -291,7 +291,7 @@ class DomainEmbeddingExtractor:
 
         x_i, edge_index_i, node_idx, y_i, num_nodes, xe_i = self._domain_subgraph(data, domain_idx)
         
-        x_i, edge_index_i, y_i = self._sample_nodes(x_i, edge_index_i, y_i, self.cfg.Fingerprint.max_nodes if self.cfg.Fingerprint.get('max_nodes', None) is not None else num_nodes)
+        x_i, edge_index_i, y_i = self._sample_nodes(x_i, edge_index_i, y_i, self.cfg.EditGrad.max_nodes if self.cfg.EditGrad.get('max_nodes', None) is not None else num_nodes)
 
         x_i = x_i.to(self.device)
         edge_index_i = edge_index_i.to(self.device)
@@ -308,28 +308,28 @@ class DomainEmbeddingExtractor:
             model.zero_grad(set_to_none=True)
             H_i, _ = model(domain_graph)  
 
-            if self.cfg.Fingerprint.loss_type == 'ce':
+            if self.cfg.EditGrad.loss_type == 'ce':
                 loss = self.prob_loss(H_i, y_i)
-            elif self.cfg.Fingerprint.loss_type == 'contrastive':
+            elif self.cfg.EditGrad.loss_type == 'contrastive':
                 loss = self.prob_loss(domain_graph, H_i)
             else:
-                raise ValueError(f"Unknown loss type {self.cfg.Fingerprint.loss_type} for Fingerprint")
+                raise ValueError(f"Unknown loss type {self.cfg.EditGrad.loss_type} for EditGrad")
             loss.backward()
 
-        if self.cfg.Fingerprint.DE_type == 'pca':
-            grad_vec = flatten_grads(model, self.cfg.Fingerprint.require_grad_only).detach()
+        if self.cfg.EditGrad.DE_type == 'pca':
+            grad_vec = flatten_grads(model, self.cfg.EditGrad.require_grad_only).detach()
 
-            delta = -self.cfg.Fingerprint.probe_lr * grad_vec  
+            delta = -self.cfg.EditGrad.probe_lr * grad_vec
             del model
             return delta.cpu()
-        elif self.cfg.Fingerprint.DE_type == 'conv':
+        elif self.cfg.EditGrad.DE_type == 'conv':
             grad_matrix = None
             for name, param in model.named_parameters():
                 if 'weight' in name and param.grad is not None:
                     grad_matrix = param.grad.detach().clone()
                     break
             if grad_matrix is None:
-                grad_vec = flatten_grads(model, self.cfg.Fingerprint.require_grad_only).detach()
+                grad_vec = flatten_grads(model, self.cfg.EditGrad.require_grad_only).detach()
                 d = x_i.shape[1]
                 d_c = int(y_i.max().item()) + 1
                 expected_size = d * d_c
@@ -343,7 +343,7 @@ class DomainEmbeddingExtractor:
                 if grad_matrix.shape[0] != x_i.shape[1]:
                     grad_matrix = grad_matrix.T
             
-            delta_matrix = -self.cfg.Fingerprint.probe_lr * grad_matrix
+            delta_matrix = -self.cfg.EditGrad.probe_lr * grad_matrix
             del model
             return delta_matrix.cpu()
 
@@ -354,13 +354,13 @@ class DomainEmbeddingExtractor:
 
         if PCA is not None and M > 10:
             pca = PCA(n_components = self.d_e,
-                      whiten=self.cfg.Fingerprint.pca_whiten,
-                      svd_solver = 'full' if self.cfg.Fingerprint.pca_svd_full else 'randomized',
-                      random_state=self.cfg.Fingerprint.random_state)
+                      whiten=self.cfg.EditGrad.pca_whiten,
+                      svd_solver = 'full' if self.cfg.EditGrad.pca_svd_full else 'randomized',
+                      random_state=self.cfg.EditGrad.random_state)
 
             comps = pca.fit_transform(deltas.cpu().numpy())
 
-            if self.cfg.Fingerprint.l2_normalize:
+            if self.cfg.EditGrad.l2_normalize:
                 comps = comps / (np.linalg.norm(comps, axis=1, keepdims=True) + 1e-8)
 
             B = torch.from_numpy(pca.components_).to(device, dtype = deltas.dtype)  
@@ -372,14 +372,14 @@ class DomainEmbeddingExtractor:
             U, S, Vh = torch.linalg.svd(Xc, full_matrices=False)  
             B = Vh[:self.d_e]
             e = (U[:, :self.d_e] * S[:self.d_e])
-            if self.cfg.Fingerprint.pca_whiten:
+            if self.cfg.EditGrad.pca_whiten:
                 e = e / (S[:self.d_e] + 1e-8)
-            if self.cfg.Fingerprint.l2_normalize:
+            if self.cfg.EditGrad.l2_normalize:
                 e = F.normalize(e, p=2, dim=-1)
             return B, e
 
 
-    def compute_fingerprints_pca(self, data):
+    def compute_editgrads_pca(self, data):
         if self._cached:
             return self._e, self._B
 
@@ -400,7 +400,7 @@ class DomainEmbeddingExtractor:
         self._save_cache()
         return e, B
     
-    def compute_fingerprints_conv(self, data):
+    def compute_editgrads_conv(self, data):
         if self._cached:
             return self._e, None
         data = data.to(self.device)
@@ -414,8 +414,8 @@ class DomainEmbeddingExtractor:
 
         d = delta_matrices[0].shape[0]
         d_c_max = max(delta.shape[1] for delta in delta_matrices)
-        padding_strategy = self.cfg.Fingerprint.DE.get('padding_strategy', 'zero')
-        padding_noise_std = self.cfg.Fingerprint.DE.get('padding_noise_std', 0.01)
+        padding_strategy = self.cfg.EditGrad.DE.get('padding_strategy', 'zero')
+        padding_noise_std = self.cfg.EditGrad.DE.get('padding_noise_std', 0.01)
         padded_deltas = []
         for i, delta in enumerate(delta_matrices):
             d_c_i = delta.shape[1]
@@ -447,7 +447,7 @@ class DomainEmbeddingExtractor:
             delta_padded = delta_padded.to(self.device)
             with torch.no_grad():
                 e_i = self.projection(delta_padded)
-                if self.cfg.Fingerprint.l2_normalize:
+                if self.cfg.EditGrad.l2_normalize:
                     e_i = F.normalize(e_i, p=2, dim=-1)
                 embeddings.append(e_i)
 
@@ -458,7 +458,7 @@ class DomainEmbeddingExtractor:
 
     def _train_projection(self, delta_matrices):
         self.projection.train()
-        de_cfg = self.cfg.Fingerprint.DE
+        de_cfg = self.cfg.EditGrad.DE
         num_epochs = de_cfg.train_epochs
         lr = de_cfg.train_lr
         diversity_weight = de_cfg.diversity_weight
@@ -513,17 +513,17 @@ class DomainEmbeddingExtractor:
 
 
     def get_cached(self):
-        if self.cfg.Fingerprint.DE_type == 'pca':
+        if self.cfg.EditGrad.DE_type == 'pca':
             if not self._cached:
                 return None
             return self._e, self._B
-        elif self.cfg.Fingerprint.DE_type == 'conv':
+        elif self.cfg.EditGrad.DE_type == 'conv':
             if not self._cached:
                 return None, None
             return self._e, None            
 
     @torch.no_grad()
-    def fingerprint_unseen_pca(self, data_new: Data):
+    def editgrad_unseen_pca(self, data_new: Data):
         if self._B is None or self._theta0 is None:
             raise RuntimeError('Compute domain embedding on pre‑training corpus first.')
 
@@ -534,23 +534,23 @@ class DomainEmbeddingExtractor:
             self.frozen_backbone.zero_grad(set_to_none=True)
             H, _ = self.frozen_backbone(data_new)
             y = data_new.y
-            if self.cfg.Fingerprint.loss_type == 'ce':
+            if self.cfg.EditGrad.loss_type == 'ce':
                 loss = self.prob_loss(H, y)
-            elif self.cfg.Fingerprint.loss_type == 'contrastive':
+            elif self.cfg.EditGrad.loss_type == 'contrastive':
                 loss = self.prob_loss(data_new, H)
             else:
                 raise ValueError(
-                    f"Unknown Fingerprint loss type: {self.cfg.Fingerprint.loss_type}"
+                    f"Unknown EditGrad loss type: {self.cfg.EditGrad.loss_type}"
                 )
             loss.backward()
-        grad = flatten_grads(self.frozen_backbone, self.cfg.Fingerprint.require_grad_only).detach()
-        delta = -self.cfg.Fingerprint.probe_lr * grad.cpu()
+        grad = flatten_grads(self.frozen_backbone, self.cfg.EditGrad.require_grad_only).detach()
+        delta = -self.cfg.EditGrad.probe_lr * grad.cpu()
         e_new = (self._B @ delta).to(self.device)
-        if self.cfg.Fingerprint.l2_normalize:
+        if self.cfg.EditGrad.l2_normalize:
             e_new = F.normalize(e_new, p=2, dim=-1)
         return e_new
 
-    def fingerprint_unseen_conv(self, data_new: Data):
+    def editgrad_unseen_conv(self, data_new: Data):
         if self._theta0 is None:
             raise RuntimeError('Compute domain embedding on pre‑training corpus first.')
         
@@ -567,13 +567,13 @@ class DomainEmbeddingExtractor:
             H, _ = self.frozen_backbone(data_new)
 
             y = data_new.y
-            if self.cfg.Fingerprint.loss_type == 'ce':
+            if self.cfg.EditGrad.loss_type == 'ce':
                 loss = self.prob_loss(H, y)
-            elif self.cfg.Fingerprint.loss_type == 'contrastive':
+            elif self.cfg.EditGrad.loss_type == 'contrastive':
                 loss = self.prob_loss(data_new, H)
             else:
                 raise ValueError(
-                    f"Unknown Fingerprint loss type: {self.cfg.Fingerprint.loss_type}"
+                    f"Unknown EditGrad loss type: {self.cfg.EditGrad.loss_type}"
                 )
             loss.backward()
         grad_matrix = None
@@ -582,7 +582,7 @@ class DomainEmbeddingExtractor:
                 grad_matrix = param.grad.detach().clone()
                 break
         if grad_matrix is None:
-            grad_vec = flatten_grads(self.frozen_backbone, self.cfg.Fingerprint.require_grad_only).detach()
+            grad_vec = flatten_grads(self.frozen_backbone, self.cfg.EditGrad.require_grad_only).detach()
             d = data_new.x.shape[1]
             d_c = int(data_new.y.max().item()) + 1
             expected_size = d * d_c
@@ -596,7 +596,7 @@ class DomainEmbeddingExtractor:
             if grad_matrix.shape[0] != data_new.x.shape[1]:
                 grad_matrix = grad_matrix.T
         
-        delta_new = -self.cfg.Fingerprint.probe_lr * grad_matrix
+        delta_new = -self.cfg.EditGrad.probe_lr * grad_matrix
 
         if hasattr(self, '_d_c_max'):
             d = delta_new.shape[0]
@@ -609,7 +609,7 @@ class DomainEmbeddingExtractor:
         
         self.projection.eval()
         e_new = self.projection(delta_new)
-        if self.cfg.Fingerprint.l2_normalize:
+        if self.cfg.EditGrad.l2_normalize:
             e_new = F.normalize(e_new, p=2, dim=-1)
         return e_new
 
@@ -624,18 +624,18 @@ class DomainEmbedder(nn.Module):
 
     def forward(self, data, device):
         B = None
-        if self.cfg.Fingerprint.DE_type == 'pca':
-            e, B = self.dm_extractor.compute_fingerprints_pca(data)
+        if self.cfg.EditGrad.DE_type == 'pca':
+            e, B = self.dm_extractor.compute_editgrads_pca(data)
             e = e.to(device)
             B = B.to(device)
-        elif self.cfg.Fingerprint.DE_type == 'conv':
-            e, _ = self.dm_extractor.compute_fingerprints_conv(data)
+        elif self.cfg.EditGrad.DE_type == 'conv':
+            e, _ = self.dm_extractor.compute_editgrads_conv(data)
             e = e.to(device)
         gamma_f, beta_f, gamma_l, beta_l = self.dm_cali(e)
         return e, (gamma_f, beta_f, gamma_l, beta_l), B
     
     @torch.no_grad()
-    def fingerprint_unseen(self, data_new: Data):
-        return self.dm_extractor.fingerprint_unseen_pca(data_new) if self.cfg.Fingerprint.DE_type == 'pca' else self.dm_extractor.fingerprint_unseen_conv(data_new)
+    def editgrad_unseen(self, data_new: Data):
+        return self.dm_extractor.editgrad_unseen_pca(data_new) if self.cfg.EditGrad.DE_type == 'pca' else self.dm_extractor.editgrad_unseen_conv(data_new)
 
 

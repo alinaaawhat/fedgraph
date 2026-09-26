@@ -114,7 +114,7 @@ class MySAGEConv(MessagePassing):
 class BackboneGNN(nn.Module):
     def __init__(self, in_dim, num_classes, cfg):
         super(BackboneGNN,self).__init__()
-        fp_conf = cfg.Fingerprint
+        fp_conf = cfg.EditGrad
         self.n_layers = fp_conf.n_layers
         self.hidden_dim = fp_conf.hidden_dim
         self.dropout = fp_conf.dropout if hasattr(fp_conf, 'dropout') else 0.5
@@ -178,7 +178,7 @@ class BackboneGNN(nn.Module):
 class BackboneGNN2(nn.Module):
     def __init__(self, in_dim, num_classes, cfg):
         super(BackboneGNN2, self).__init__()
-        fp_conf = cfg.Fingerprint
+        fp_conf = cfg.EditGrad
         self.n_layers = fp_conf.n_layers
         self.hidden_dim = fp_conf.hidden_dim
         self.dropout = fp_conf.dropout if hasattr(fp_conf, 'dropout') else 0.5
@@ -289,18 +289,18 @@ class BackboneGNN2(nn.Module):
 
 class FlexibleBackboneGNN(BackboneGNN2):
     
-    def __init__(self, in_dim, num_classes, cfg, fingerprint_layers=1):
+    def __init__(self, in_dim, num_classes, cfg, editgrad_layers=1):
 
         super().__init__(in_dim, num_classes, cfg)
-        self.fingerprint_layers = fingerprint_layers
+        self.editgrad_layers = editgrad_layers
     
-    def forward_fingerprint(self, data):
-        return self.forward(data, num_layers=self.fingerprint_layers)
+    def forward_editgrad(self, data):
+        return self.forward(data, num_layers=self.editgrad_layers)
     
-    def create_fingerprint_copy(self):
+    def create_editgrad_copy(self):
         import copy
         cfg_copy = copy.deepcopy(self._get_config())
-        cfg_copy.Fingerprint.n_layers = self.fingerprint_layers
+        cfg_copy.EditGrad.n_layers = self.editgrad_layers
         
         smaller_model = BackboneGNN2(
             in_dim=self.gnns[0].in_channels if hasattr(self.gnns[0], 'in_channels') else self.in_dim,
@@ -308,26 +308,26 @@ class FlexibleBackboneGNN(BackboneGNN2):
             cfg=cfg_copy
         )
         
-        state_dict = self.get_submodel_state_dict(self.fingerprint_layers)
+        state_dict = self.get_submodel_state_dict(self.editgrad_layers)
         smaller_model.load_state_dict(state_dict, strict=False)
         
         return smaller_model
     
     def _get_config(self):
         class FakeConfig:
-            class Fingerprint:
+            class EditGrad:
                 pass
         
         cfg = FakeConfig()
-        cfg.Fingerprint = FakeConfig.Fingerprint()
-        cfg.Fingerprint.n_layers = self.n_layers
-        cfg.Fingerprint.hidden_dim = self.hidden_dim
-        cfg.Fingerprint.dropout = self.dropout
-        cfg.Fingerprint.conv_type = self.conv_type
-        cfg.Fingerprint.add_self_loops = True
-        cfg.Fingerprint.n_heads = 1
-        cfg.Fingerprint.use_bn = self.bn
-        cfg.Fingerprint.readout_proj = self.readout_proj
+        cfg.EditGrad = FakeConfig.EditGrad()
+        cfg.EditGrad.n_layers = self.n_layers
+        cfg.EditGrad.hidden_dim = self.hidden_dim
+        cfg.EditGrad.dropout = self.dropout
+        cfg.EditGrad.conv_type = self.conv_type
+        cfg.EditGrad.add_self_loops = True
+        cfg.EditGrad.n_heads = 1
+        cfg.EditGrad.use_bn = self.bn
+        cfg.EditGrad.readout_proj = self.readout_proj
         
         return cfg
 

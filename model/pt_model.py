@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 from data_process.data import EpisodeDataset
 from torch.utils.data import DataLoader
 import torch.optim as optim
-from model.fingerprint import DomainEmbedder
+from model.editgrad import DomainEmbedder
 import torch.nn.functional as F
 import copy
 
@@ -33,8 +33,8 @@ class PAMA(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.h = cfg.Fingerprint.hidden_dim
-        self.d = cfg.PAMA.d_attn if hasattr(cfg.PAMA, 'd_attn') else cfg.Fingerprint.hidden_dim
+        self.h = cfg.EditGrad.hidden_dim
+        self.d = cfg.PAMA.d_attn if hasattr(cfg.PAMA, 'd_attn') else cfg.EditGrad.hidden_dim
         self.heads = cfg.PAMA.heads if hasattr(cfg.PAMA, 'heads') else 1
         self.W_Q = nn.Linear(self.h, self.d * self.heads)
         self.W_K = nn.Linear(self.h, self.d * self.heads)
@@ -95,7 +95,7 @@ class GFM(pl.LightningModule):
         self.de = domain_embedder
         self.frozen_backbone = self.de.dm_extractor.frozen_backbone
 
-        self.E_lab = nn.Parameter(torch.randn(L_max, self.cfg.Fingerprint.hidden_dim))
+        self.E_lab = nn.Parameter(torch.randn(L_max, self.cfg.EditGrad.hidden_dim))
         self.pama = PAMA(cfg)
 
         self.domain_embeddings = None
@@ -118,9 +118,9 @@ class GFM(pl.LightningModule):
         self.frozen_backbone = self.frozen_backbone.to(device)
         
         with torch.no_grad():
-            if self.cfg.Fingerprint.DE_type == 'pca':
+            if self.cfg.EditGrad.DE_type == 'pca':
                 e, cali, B = self.de(comb_pretrained_graphs, device = device)
-            elif self.cfg.Fingerprint.DE_type == 'conv':
+            elif self.cfg.EditGrad.DE_type == 'conv':
                 e, cali, _ = self.de(comb_pretrained_graphs, device = device)
             self.domain_embeddings = e
             self.gamma_f, self.beta_f, self.gamma_l, self.beta_l = cali

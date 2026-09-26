@@ -23,7 +23,7 @@ import torch.nn.functional as F
 
 import ablation.fedpretrain as original
 from ablation.train_identity_cosine import IdentityCosineFederatedGFM
-from model.fingerprint import DomainEmbedder
+from model.editgrad import DomainEmbedder
 
 
 DOMAIN_RESPONSE_STATE = {}
@@ -80,7 +80,7 @@ def _episode_gradient_responses(extractor, graph, supports):
             if gradient.shape[0] != graph.x.shape[1]:
                 gradient = gradient.T
             responses.append(
-                (-float(extractor.cfg.Fingerprint.probe_lr) * gradient)
+                (-float(extractor.cfg.EditGrad.probe_lr) * gradient)
                 .detach()
                 .cpu()
             )
@@ -110,11 +110,11 @@ def _fit_hierarchical_projection(extractor, padded_responses, slices, cfg, devic
         OmegaConf.select(cfg, "ablation.projection_patience", default=40)
     )
     optimizer = torch.optim.Adam(
-        extractor.projection.parameters(), lr=float(cfg.Fingerprint.DE.train_lr)
+        extractor.projection.parameters(), lr=float(cfg.EditGrad.DE.train_lr)
     )
     best_state = copy.deepcopy(extractor.projection.state_dict())
     best_objective, stale = float("inf"), 0
-    epochs = int(cfg.Fingerprint.DE.train_epochs)
+    epochs = int(cfg.EditGrad.DE.train_epochs)
     for epoch in range(epochs):
         optimizer.zero_grad(set_to_none=True)
         embeddings = torch.stack([
@@ -176,10 +176,10 @@ def _fit_hierarchical_projection(extractor, padded_responses, slices, cfg, devic
     return embeddings, centers
 
 
-def compute_shared_fingerprint_v3(cfg, clients, frozen_backbone, device):
+def compute_shared_editgrad_v3(cfg, clients, frozen_backbone, device):
     pass
-    shared_cfg = original._shared_fingerprint_cfg(cfg)
-    shared_cfg.Fingerprint.DE_type = "conv"
+    shared_cfg = original._shared_editgrad_cfg(cfg)
+    shared_cfg.EditGrad.DE_type = "conv"
     embedder = DomainEmbedder(
         frozen_backboneGNN=copy.deepcopy(frozen_backbone).to(device),
         cfg=shared_cfg,
@@ -189,13 +189,13 @@ def compute_shared_fingerprint_v3(cfg, clients, frozen_backbone, device):
         OmegaConf.select(cfg, "ablation.multi_episode", default=True)
     )
     bank_size = int(
-        OmegaConf.select(cfg, "ablation.fingerprint_bank_size", default=32)
+        OmegaConf.select(cfg, "ablation.editgrad_bank_size", default=32)
     ) if use_multi else 1
     bank_k = int(
-        OmegaConf.select(cfg, "ablation.fingerprint_k_shot", default=5)
+        OmegaConf.select(cfg, "ablation.editgrad_k_shot", default=5)
     )
     bank_m = int(
-        OmegaConf.select(cfg, "ablation.fingerprint_m_way", default=5)
+        OmegaConf.select(cfg, "ablation.editgrad_m_way", default=5)
     )
 
     all_responses, slices = [], []
@@ -245,8 +245,8 @@ def compute_shared_fingerprint_v3(cfg, clients, frozen_backbone, device):
     return embedder
 
 
-def install_shared_fingerprint_v3(model, shared_embedder, client_index):
-    install_shared_fingerprint_v3.original_install(
+def install_shared_editgrad_v3(model, shared_embedder, client_index):
+    install_shared_editgrad_v3.original_install(
         model, shared_embedder, client_index
     )
     extractor = shared_embedder.dm_extractor
@@ -532,10 +532,10 @@ def _configure_variant(cfg):
 )
 def main(cfg: DictConfig):
     _configure_variant(cfg)
-    cfg.Fingerprint.DE_type = "conv"
-    original._compute_shared_fingerprint = compute_shared_fingerprint_v3
-    install_shared_fingerprint_v3.original_install = original._install_shared_fingerprint
-    original._install_shared_fingerprint = install_shared_fingerprint_v3
+    cfg.EditGrad.DE_type = "conv"
+    original._compute_shared_editgrad = compute_shared_editgrad_v3
+    install_shared_editgrad_v3.original_install = original._install_shared_editgrad
+    original._install_shared_editgrad = install_shared_editgrad_v3
     original.FederatedGFM = V3FederatedGFM
     original._run_local_training = run_local_training_v3
 
@@ -584,9 +584,9 @@ if __name__ == "__main__":
         "+ablation.centered_cali=true": "ablation.centered_cali=",
         "+ablation.multi_episode=true": "ablation.multi_episode=",
         "+ablation.sample_domain_responses=true": "ablation.sample_domain_responses=",
-        "+ablation.fingerprint_bank_size=32": "ablation.fingerprint_bank_size=",
-        "+ablation.fingerprint_k_shot=5": "ablation.fingerprint_k_shot=",
-        "+ablation.fingerprint_m_way=5": "ablation.fingerprint_m_way=",
+        "+ablation.editgrad_bank_size=32": "ablation.editgrad_bank_size=",
+        "+ablation.editgrad_k_shot=5": "ablation.editgrad_k_shot=",
+        "+ablation.editgrad_m_way=5": "ablation.editgrad_m_way=",
         "+ablation.diversity_weight=0.001": "ablation.diversity_weight=",
         "+ablation.stability_weight=0.01": "ablation.stability_weight=",
         "+ablation.projection_patience=40": "ablation.projection_patience=",

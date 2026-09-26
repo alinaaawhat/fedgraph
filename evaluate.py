@@ -44,7 +44,7 @@ class EvaluationPrototypeLearner(PrototypeInferenceLearner):
                     "frozen_backbone_state_dict"
                 ].items()
             }
-        if self.cfg.Fingerprint.DE_type == "conv" and not hasattr(
+        if self.cfg.EditGrad.DE_type == "conv" and not hasattr(
             extractor, "_d_c_max"
         ):
             deltas = getattr(extractor, "_delta_matrices", None)
@@ -103,7 +103,7 @@ class EvaluationPrototypeLearner(PrototypeInferenceLearner):
         cache_key = id(graph_data)
         if cache_key in self._domain_embedding_cache:
             return self._domain_embedding_cache[cache_key]
-        if self.cfg.Fingerprint.DE_type != "conv":
+        if self.cfg.EditGrad.DE_type != "conv":
             embedding = super().compute_domain_embedding(graph_data)
             self._domain_embedding_cache[cache_key] = embedding
             return embedding
@@ -124,7 +124,7 @@ class EvaluationPrototypeLearner(PrototypeInferenceLearner):
         with torch.enable_grad():
             model.zero_grad(set_to_none=True)
             node_logits, _ = model(graph_data)
-            if self.cfg.Fingerprint.loss_type == "ce":
+            if self.cfg.EditGrad.loss_type == "ce":
                 loss = extractor.prob_loss(node_logits, graph_data.y)
             else:
                 loss = extractor.prob_loss(graph_data, node_logits)
@@ -136,10 +136,10 @@ class EvaluationPrototypeLearner(PrototypeInferenceLearner):
                     gradient = parameter.grad.detach().clone()
                     break
             if gradient is None:
-                raise RuntimeError("Could not obtain a domain fingerprint gradient")
+                raise RuntimeError("Could not obtain a domain editgrad gradient")
             if gradient.shape[0] != graph_data.x.shape[1]:
                 gradient = gradient.T
-            delta = -float(self.cfg.Fingerprint.probe_lr) * gradient
+            delta = -float(self.cfg.EditGrad.probe_lr) * gradient
 
         target_width = int(extractor._d_c_max)
         if delta.shape[1] < target_width:
@@ -149,7 +149,7 @@ class EvaluationPrototypeLearner(PrototypeInferenceLearner):
 
         with torch.no_grad():
             embedding = extractor.projection(delta)
-            if self.cfg.Fingerprint.l2_normalize:
+            if self.cfg.EditGrad.l2_normalize:
                 embedding = F.normalize(embedding, p=2, dim=-1)
         embedding = embedding.detach()
         self._domain_embedding_cache[cache_key] = embedding

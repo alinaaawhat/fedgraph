@@ -5,12 +5,12 @@ prev_ckpt: null
 
 unify_dim: 64
 
-Fingerprint:
+EditGrad:
   hidden_dim: 64
   n_layers: 1
   conv_type: 'SAGE'
   add_self_loops: true
-  n_layers_fingerprint: 1
+  n_layers_editgrad: 1
   n_heads: 8
   use_bn: false
   probe_lr: 1e-2

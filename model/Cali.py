@@ -7,7 +7,7 @@ class DomainCali(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.d_e = self.cfg.Fingerprint.compressed_dim  
+        self.d_e = self.cfg.EditGrad.compressed_dim
         self.hidden_dim = self.cfg.Cali.hidden_dim
         self.aligned_feat_dim = self.cfg.Cali.aligned_feat_dim
         dims = [self.d_e] + [self.hidden_dim] * (self.cfg.Cali.num_layers - 1) + [4 * self.aligned_feat_dim]

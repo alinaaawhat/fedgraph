@@ -8,7 +8,7 @@ from utils.logging import logger
 from data_process.data import SingleGraphDataset
 from data_process.datahelper import refine_dataset, span_node_and_edge_idx, filter_unnecessary_attrs, SentenceEncoder
 from model.base import BackboneGNN
-from model.fingerprint import DomainEmbedder
+from model.editgrad import DomainEmbedder
 import numpy as np
 from typing import Dict
 from torch_geometric.data import Data
@@ -49,8 +49,8 @@ class PrototypeInferenceLearner:
             if 'dirs' in config_dict and config_dict['dirs']:
                 dirs = config_dict['dirs']
                 
-                if 'fingerprint_storage' in dirs:
-                    dirs['fingerprint_storage'] = os.path.join(project_root, 'generated_files', 'fingerprint')
+                if 'editgrad_storage' in dirs:
+                    dirs['editgrad_storage'] = os.path.join(project_root, 'generated_files', 'editgrad')
                 
                 if 'data_storage' in dirs:
                     dirs['data_storage'] = '/home/haoran/data/fed-grp'
@@ -69,14 +69,14 @@ class PrototypeInferenceLearner:
             if not hasattr(self.cfg, 'dirs'):
                 self.cfg.dirs = DictConfig({})
             
-            self.cfg.dirs.fingerprint_storage = os.path.join(project_root, 'generated_files', 'fingerprint')
+            self.cfg.dirs.editgrad_storage = os.path.join(project_root, 'generated_files', 'editgrad')
             self.cfg.dirs.data_storage = '/home/haoran/data/fed-grp'
             self.cfg.dirs.output = os.path.join(project_root, 'generated_files', 'output', 'G-Align')
 
     def _setup_model(self):
-        fingerprint_type = self.cfg.Fingerprint.DE_type
+        editgrad_type = self.cfg.EditGrad.DE_type
         required = ["domain_embedder_theta0"]
-        if fingerprint_type == "conv":
+        if editgrad_type == "conv":
             required.append("domain_embedder_projection_state")
             has_width = (
                 self.model_state.get("domain_embedder_d_c_max") is not None
@@ -86,7 +86,7 @@ class PrototypeInferenceLearner:
                 required.append(
                     "domain_embedder_d_c_max or domain_embedder_delta_matrices"
                 )
-        elif fingerprint_type == "pca":
+        elif editgrad_type == "pca":
             required.append("domain_embedder_B")
         missing = [
             key for key in required
@@ -94,7 +94,7 @@ class PrototypeInferenceLearner:
         ]
         if missing:
             raise ValueError(
-                "Checkpoint is not self-contained for fingerprint evaluation; "
+                "Checkpoint is not self-contained for editgrad evaluation; "
                 f"missing: {', '.join(missing)}"
             )
 
@@ -122,7 +122,7 @@ class PrototypeInferenceLearner:
         
         self.domain_embedder = DomainEmbedder(self.frozen_backbone, self.cfg)
         
-        if self.cfg.Fingerprint.DE_type == 'conv' and 'domain_embedder_projection_state' in self.model_state:
+        if self.cfg.EditGrad.DE_type == 'conv' and 'domain_embedder_projection_state' in self.model_state:
             self.domain_embedder.dm_extractor.projection.load_state_dict(
                 self.model_state['domain_embedder_projection_state']
             )
@@ -140,7 +140,7 @@ class PrototypeInferenceLearner:
         
         self.domain_embedder.dm_extractor._theta0 = self.model_state.get('domain_embedder_theta0')
         self.domain_embedder.dm_extractor._e = self.model_state.get('domain_embedder_e')
-        if self.cfg.Fingerprint.DE_type == 'pca':
+        if self.cfg.EditGrad.DE_type == 'pca':
             self.domain_embedder.dm_extractor._B = self.model_state.get('domain_embedder_B')
         
         self.domain_embedder.dm_extractor._cached = True
@@ -282,7 +282,7 @@ class PrototypeInferenceLearner:
         if self.domain_embedder.dm_extractor._theta0 is not None:
             self.frozen_backbone.load_state_dict(self.domain_embedder.dm_extractor._theta0, strict=False)
         
-        domain_embedding = self.domain_embedder.fingerprint_unseen(graph_data)
+        domain_embedding = self.domain_embedder.editgrad_unseen(graph_data)
         
         logger.info(f"Domain embedding shape: {domain_embedding.shape}")
         return domain_embedding
